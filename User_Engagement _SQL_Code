@@ -1,0 +1,50 @@
+WITH user_browsing AS (
+ SELECT
+  u.id as user_id,
+  u.email,
+  u.age,
+  u.gender,
+  u.country,
+  CAST(u.created_at AS DATE) AS account_created,
+  e.id AS event_id,
+  e.sequence_number,
+  e.session_id,
+  e.created_at AS event_creation,
+  e.browser,
+  e.traffic_source,
+  e.uri,
+  e.event_type,
+FROM bigquery-public-data.thelook_ecommerce.users u
+LEFT JOIN bigquery-public-data.thelook_ecommerce.events e
+ON u.id=e.user_id
+),
+user_metrics AS (
+ SELECT
+  user_id,
+  TIMESTAMP_DIFF(MAX(user_browsing.event_creation), MIN(user_browsing.event_creation), SECOND) AS user_duration,
+  COUNT(*) AS total_events,
+  COUNT(DISTINCT session_id) AS total_sessions,
+  COUNT(DISTINCT CASE WHEN event_type ='purchase'THEN session_id END) AS total_purchases
+FROM user_browsing
+GROUP BY user_id
+)
+SELECT
+  user_metrics.user_id,
+  user_metrics.user_duration,
+  CASE WHEN user_metrics.total_sessions > 0 THEN user_metrics.total_events / user_metrics.total_sessions ELSE 0 END AS avg_events_per_session,
+  user_metrics.total_sessions,
+  CASE WHEN user_metrics.total_sessions > 0 THEN user_metrics.total_purchases / user_metrics.total_sessions ELSE 0 END AS conversion_rate,
+  user_browsing.traffic_source,
+  COUNT(DISTINCT user_browsing.session_id) AS sessions_per_source,
+  user_browsing.browser,
+  COUNT(DISTINCT user_browsing.browser) AS sessions_per_browser
+FROM user_metrics
+LEFT JOIN user_browsing ON user_metrics.user_id = user_browsing.user_id
+GROUP BY
+  user_metrics.user_id,
+  user_metrics.user_duration,
+  user_metrics.total_sessions,
+  user_metrics.total_purchases,
+  user_metrics.total_events,
+  user_browsing.traffic_source,
+  user_browsing.browser;
